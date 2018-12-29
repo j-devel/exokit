@@ -46,6 +46,8 @@ unsigned int Image::GetNumChannels() {
   }
 } */
 
+//#define USE_FIXED_VERSION 1234
+
 std::map<uv_async_t *, Image *> handleToImageMap;
 void Image::RunInMainThread(uv_async_t *handle) {
   Nan::HandleScope scope;
@@ -53,6 +55,7 @@ void Image::RunInMainThread(uv_async_t *handle) {
   auto iter = handleToImageMap.find(handle);
   Image *image = (*iter).second;
   handleToImageMap.erase(iter);
+  printf("@@@ image %p %d %d\n", image, image->GetWidth(), image->GetHeight());
 
   Local<Object> asyncObject = Nan::New<Object>();
   AsyncResource asyncResource(Isolate::GetCurrent(), asyncObject, "imageLoad");
@@ -68,7 +71,17 @@ void Image::RunInMainThread(uv_async_t *handle) {
   image->arrayBuffer.Reset();
   image->error = "";
 
-  uv_close((uv_handle_t *)handle, nullptr);
+  printf("@@@ closing handle: %p flags: %d\n", handle, handle->flags);
+  fflush(stdout);
+#ifdef USE_FIXED_VERSION
+  uv_close((uv_handle_t *)handle, [](uv_handle_t *handle) {
+    printf("@@@ on uv_close: for handle: %p flags: %d\n", handle, handle->flags);
+    printf("@@@ on uv_close: free handle: %p\n", handle);
+    free(handle);
+  });
+#else
+    uv_close((uv_handle_t *)handle, nullptr);
+#endif
 }
 
 void Image::Load(Local<ArrayBuffer> arrayBuffer, size_t byteOffset, size_t byteLength, Local<Function> cbFn) {
@@ -79,9 +92,16 @@ void Image::Load(Local<ArrayBuffer> arrayBuffer, size_t byteOffset, size_t byteL
     this->cbFn.Reset(cbFn);
     this->error = "";
 
-    uv_async_init(uv_default_loop(), &threadAsync, RunInMainThread);
-
-    handleToImageMap[&threadAsync] = this;
+#ifdef USE_FIXED_VERSION
+  threadAsyncHandle = (uv_async_t *)malloc(sizeof(uv_async_t));
+  uv_async_init(uv_default_loop(), threadAsyncHandle, RunInMainThread);
+  printf("@@@ threadAsyncHandle: %p loop: %p this: %p\n", threadAsyncHandle, uv_default_loop(), this);
+  handleToImageMap[threadAsyncHandle] = this;
+#else
+  uv_async_init(uv_default_loop(), &threadAsync, RunInMainThread);
+  printf("@@@ &threadAsync: %p loop: %p this: %p\n", &threadAsync, uv_default_loop(), this);
+  handleToImageMap[&threadAsync] = this;
+#endif
 
     std::thread([this, buffer, byteLength]() -> void {
       sk_sp<SkData> data = SkData::MakeWithoutCopy(buffer, byteLength);
@@ -132,9 +152,16 @@ void Image::Load(Local<ArrayBuffer> arrayBuffer, size_t byteOffset, size_t byteL
         }
       }
 
+#ifdef USE_FIXED_VERSION
+      printf("@@@ uv_async_send(): for %p\n", this->threadAsyncHandle);
+      uv_async_send(this->threadAsyncHandle);
+#else
+      printf("@@@ uv_async_send(): for %p\n", &this->threadAsync);
       uv_async_send(&this->threadAsync);
+#endif
     }).detach();
   } else {
+      printf("@@@ case -- already loading\n");
     Local<String> arg0 = Nan::New<String>("already loading").ToLocalChecked();
     Local<Value> argv[] = {
       arg0,
@@ -231,4 +258,11 @@ NAN_METHOD(Image::LoadMethod) {
 }
 
 Image::Image () {}
-Image::~Image () {}
+//Image::~Image () {}
+Image::~Image () {
+#ifdef USE_FIXED_VERSION
+  printf("@@@ ~Image(): with async: %p\n", this->threadAsyncHandle);
+#else
+  printf("@@@ ~Image(): with async: %p\n", &this->threadAsync);
+#endif
+}
