@@ -2513,6 +2513,7 @@ size_t getArrayBufferViewElementSize(Local<ArrayBufferView> arrayBufferView) {
 }
 
 NAN_METHOD(WebGLRenderingContext::TexImage2D) {
+  printf("@@@ 0000\n"); //return; //!!!!
   Isolate *isolate = Isolate::GetCurrent();
 
   Local<Value> target = info[0];
@@ -2639,9 +2640,11 @@ NAN_METHOD(WebGLRenderingContext::TexImage2D) {
   GLuint texV;
   char *pixelsV;
   if (pixels->IsNull()) {
+    printf("@@@ 1: %d %d info.Length(): %d\n", widthV, heightV, info.Length());
     glTexImage2D(targetV, levelV, internalformatV, widthV, heightV, borderV, formatV, typeV, NULL);
   } else if (pixels->IsNumber()) {
     GLintptr offsetV = pixels->Uint32Value();
+    printf("@@@ 2: %d %d info.Length(): %d\n", widthV, heightV, info.Length());
     glTexImage2D(targetV, levelV, internalformatV, widthV, heightV, borderV, formatV, typeV, (void *)offsetV);
   } else if ((texV = getImageTexture(pixels)) != 0) {
     glTexImage2D(targetV, levelV, internalformatV, widthV, heightV, borderV, formatV, typeV, NULL);
@@ -2656,6 +2659,7 @@ NAN_METHOD(WebGLRenderingContext::TexImage2D) {
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targetV, gl->HasTextureBinding(gl->activeTexture, targetV) ? gl->GetTextureBinding(gl->activeTexture, targetV) : 0, 0);
     
     if (gl->flipY) {
+      printf("@@@ 3a: %d %d info.Length(): %d\n", widthV, heightV, info.Length()); //return; // flipY OK, this case
       glBlitFramebuffer(
         0, 0, widthV, heightV,
         0, 0, widthV, heightV,
@@ -2663,6 +2667,7 @@ NAN_METHOD(WebGLRenderingContext::TexImage2D) {
         GL_NEAREST
       );
     } else {
+      printf("@@@ 3b: %d %d info.Length(): %d\n", widthV, heightV, info.Length()); //return; // flipY OK, this case
       glBlitFramebuffer(
         0, heightV, widthV, 0,
         0, 0, widthV, heightV,
@@ -2705,11 +2710,17 @@ NAN_METHOD(WebGLRenderingContext::TexImage2D) {
       pixelsV2 = pixelsV;
     }
 
-    if (gl->flipY && !pixels->IsArrayBufferView()) {
+    // @@@ IsArrayBufferView: false approx. implies "HTMLImageElement", "HTMLVideoElement", "ImageData", "ImageBitmap", "HTMLCanvasElement"
+
+//    if (gl->flipY && !pixels->IsArrayBufferView()) {
+//    if (gl->flipY && pixels->IsArrayBufferView()) { // @@@ fix????; unlikely, gone through getImageData(pixels) already so flipImageData() applicable
+    if (gl->flipY) { // @@@ fix????????????
+//    if (1) { // @@@ !!!!!
       unique_ptr<char[]> pixelsV3Buffer(new char[widthV * heightV * pixelSize]);
 
       flipImageData(pixelsV3Buffer.get(), pixelsV2, widthV, heightV, pixelSize);
 
+      printf("@@@ 4a: %d %d info.Length(): %d IsArrayBufferView: %d\n", widthV, heightV, info.Length(), pixels->IsArrayBufferView());
       glTexImage2D(targetV, levelV, internalformatV, widthV, heightV, borderV, formatV, typeV, pixelsV3Buffer.get());
     } else if (formatV == GL_LUMINANCE || formatV == GL_ALPHA) {
       unique_ptr<char[]> pixelsV3Buffer(new char[widthV * heightV * 4]);
@@ -2730,6 +2741,7 @@ NAN_METHOD(WebGLRenderingContext::TexImage2D) {
         expandLuminance<unsigned char>(pixelsV3Buffer.get(), pixelsV2, widthV, heightV);
       }
 
+      printf("@@@ 4b: %d %d info.Length(): %d IsArrayBufferView: %d\n", widthV, heightV, info.Length(), pixels->IsArrayBufferView());
       glTexImage2D(targetV, levelV, GL_RGBA8, widthV, heightV, borderV, GL_RGBA, typeV, pixelsV3Buffer.get());
     } else if (formatV == GL_LUMINANCE_ALPHA) {
       unique_ptr<char[]> pixelsV3Buffer(new char[widthV * heightV * 4]);
@@ -2750,8 +2762,10 @@ NAN_METHOD(WebGLRenderingContext::TexImage2D) {
         expandLuminanceAlpha<unsigned char>(pixelsV3Buffer.get(), pixelsV2, widthV, heightV);
       }
 
+      printf("@@@ 4c: %d %d info.Length(): %d IsArrayBufferView: %d\n", widthV, heightV, info.Length(), pixels->IsArrayBufferView());
       glTexImage2D(targetV, levelV, GL_RGBA8, widthV, heightV, borderV, GL_RGBA, typeV, pixelsV3Buffer.get());
     } else {
+      printf("@@@ 4d: %d %d info.Length(): %d IsArrayBufferView: %d\n", widthV, heightV, info.Length(), pixels->IsArrayBufferView());
       glTexImage2D(targetV, levelV, internalformatV, widthV, heightV, borderV, formatV, typeV, pixelsV2);
     }
 
